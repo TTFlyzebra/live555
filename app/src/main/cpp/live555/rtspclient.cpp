@@ -1,8 +1,8 @@
 #include <jni.h>
 #include <string.h>
 #include <android/log.h>
-#include "live555/UsageEnvironment/include/UsageEnvironment.hh"
-#include "live555/BasicUsageEnvironment/include/BasicUsageEnvironment.hh"
+#include "UsageEnvironment/include/UsageEnvironment.hh"
+#include "BasicUsageEnvironment/include/BasicUsageEnvironment.hh"
 
 #define LOG_TAG "live555Lib"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,LOG_TAG,__VA_ARGS__)
