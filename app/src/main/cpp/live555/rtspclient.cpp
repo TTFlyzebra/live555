@@ -1,9 +1,9 @@
 #include <jni.h>
 #include <string.h>
 #include <android/log.h>
-#include "BasicUsageEnvironment/include/BasicUsageEnvironment.hh"
-#include "liveMedia/include/liveMedia.hh"
-#include "liveMedia/include/RTSPClient.hh"
+#include "BasicUsageEnvironment.hh"
+#include "liveMedia.hh"
+#include "RTSPClient.hh"
 
 #define LOG_TAG "live555Lib"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,LOG_TAG,__VA_ARGS__)
