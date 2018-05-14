@@ -37,6 +37,10 @@ public class RtspClient {
         if(iRtspCallBack!=null) iRtspCallBack.onAudio(audioBytes);
     }
 
+    private void onSPS_PPS(byte[] sps,byte[] pps){
+        if(iRtspCallBack!=null) iRtspCallBack.onSPS_PPS(sps,pps);
+    }
+
     public native void openUrl(String url);
 
     public native void stop();

@@ -11,4 +11,6 @@ public interface IRtspCallBack {
     void onVideo(byte[] videoBytes);
 
     void onAudio(byte[] audioBytes);
+
+    void onSPS_PPS(byte[] sps,byte[] pps);
 }

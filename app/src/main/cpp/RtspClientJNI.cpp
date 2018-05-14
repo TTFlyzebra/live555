@@ -14,9 +14,11 @@ jobject jobj;
 
 void javaOnResult(const char *result);
 
-void javaOnVideo(const char *videoBytes,int length);
+void javaOnVideo(const char *videoBytes, int length);
 
 void javaOnAudio(const char *audioBytes, int length);
+
+void javaOnSPS_PPS(const char *sps, int len1, const char *pps, int len2);
 
 void openURL(UsageEnvironment &env, char const *progName, char const *rtspURL);
 
@@ -173,7 +175,8 @@ static unsigned rtspClientCount = 0; // Counts how many streams (i.e., "RTSPClie
 void openURL(UsageEnvironment &env, char const *progName, char const *rtspURL) {
     // Begin by creating a "RTSPClient" object.  Note that there is a separate "RTSPClient" object for each stream that we wish
     // to receive (even if more than stream uses the same "rtsp://" URL).
-    RTSPClient *rtspClient = ourRTSPClient::createNew(env, rtspURL, RTSP_CLIENT_VERBOSITY_LEVEL, progName);
+    RTSPClient *rtspClient = ourRTSPClient::createNew(env, rtspURL, RTSP_CLIENT_VERBOSITY_LEVEL,
+                                                      progName);
     if (rtspClient == NULL) {
 //        javaOnResult(jniEnv, thiz, "Failed to create a RTSP client for URL \"%s\": %s\n", rtspURL,env.getResultMsg());
         LOGE("Failed to create a RTSP client for URL \"%s\": %s\n", rtspURL, env.getResultMsg());
@@ -516,14 +519,39 @@ void DummySink::afterGettingFrame(void *clientData, unsigned frameSize, unsigned
     sink->afterGettingFrame(frameSize, numTruncatedBytes, presentationTime, durationInMicroseconds);
 }
 
+bool firstFrame = true;
+
 void DummySink::afterGettingFrame(unsigned frameSize, unsigned numTruncatedBytes,
                                   struct timeval presentationTime,
                                   unsigned /*durationInMicroseconds*/) {
     // We've just received a frame of data.  (Optionally) print out information about it:
-    LOGI("Stream ID=%d,mediumName=%s,codecName=%s,size=%d,\n", fStreamId, fSubsession.mediumName(), fSubsession.codecName(), frameSize);
-    char *buf = new char[frameSize];
-    memcpy(buf,fReceiveBuffer,frameSize);
-    javaOnVideo((const char *) buf,frameSize);
+    char *type = new char[24];
+    sprintf(type, "%s", fSubsession.codecName());
+    if (firstFrame) {
+        unsigned int num;
+        SPropRecord *sps = parseSPropParameterSets(fSubsession.fmtp_spropparametersets(), num);
+        javaOnSPS_PPS(reinterpret_cast<const char *>(sps[0].sPropBytes), sps[0].sPropLength,
+                      reinterpret_cast<const char *>(sps[1].sPropBytes), sps[1].sPropLength);
+        delete[] sps;
+        firstFrame = False;
+    }
+//    LOGI("Stream ID=%d,mediumName=%s,codecName=%s,size=%d,\n", fStreamId,fSubsession.mediumName(), fSubsession.codecName(), frameSize);
+    if (0 == strcmp("H264", type)) {
+        char *buf = new char[frameSize + 4];
+        buf[0] = 0x00;
+        buf[1] = 0x00;
+        buf[2] = 0x00;
+        buf[3] = 0x01;
+        memcpy(buf + 4, fReceiveBuffer, frameSize);
+        javaOnVideo(buf, frameSize);
+        delete[] buf;
+    } else {
+//        char *buf = new char[frameSize];
+//        memcpy(buf, fReceiveBuffer, frameSize);
+//        javaOnAudio(buf,frameSize);
+//        delete[] buf;
+    }
+    delete[] type;
     continuePlaying();
 }
 
@@ -577,7 +605,8 @@ void javaOnResult(const char *result) {
     (*jniEnv).CallVoidMethod(jobj, onresult, jstr);
     (*jniEnv).DeleteLocalRef(jstr);
 }
-void javaOnVideo(const char *videoBytes,int length) {
+
+void javaOnVideo(const char *videoBytes, int length) {
     static jmethodID onVideo = NULL;
     if (onVideo == NULL) {
         jclass cls = (*jniEnv).GetObjectClass(jobj);
@@ -593,7 +622,7 @@ void javaOnVideo(const char *videoBytes,int length) {
     (*jniEnv).DeleteLocalRef(jbytes);
 }
 
-void javaOnAudio(const char *audioBytes,int length) {
+void javaOnAudio(const char *audioBytes, int length) {
     static jmethodID onAudio = NULL;
     if (onAudio == NULL) {
         jclass cls = (*jniEnv).GetObjectClass(jobj);
@@ -606,5 +635,25 @@ void javaOnAudio(const char *audioBytes,int length) {
     jbyteArray jbytes = (*jniEnv).NewByteArray(static_cast<jsize>(length));
     (*jniEnv).SetByteArrayRegion(jbytes, 0, length, reinterpret_cast<const jbyte *>(audioBytes));
     (*jniEnv).CallVoidMethod(jobj, onAudio, jbytes);
+    (*jniEnv).DeleteLocalRef(jbytes);
+}
+
+void javaOnSPS_PPS(const char *sps, int len1, const char *pps, int len2) {
+    static jmethodID onAudio = NULL;
+    if (onAudio == NULL) {
+        jclass cls = (*jniEnv).GetObjectClass(jobj);
+        onAudio = (*jniEnv).GetMethodID(cls, "onSPS_PPS", "([B[B)V");
+        if (onAudio == NULL) {
+            LOGI("onAudio--method not found");
+            return; /* method not found */
+        }
+    }
+    jbyteArray jbytes1 = (*jniEnv).NewByteArray(static_cast<jsize>(len1));
+    (*jniEnv).SetByteArrayRegion(jbytes1, 0, len1, reinterpret_cast<const jbyte *>(sps));
+    jbyteArray jbytes2 = (*jniEnv).NewByteArray(static_cast<jsize>(len2));
+    (*jniEnv).SetByteArrayRegion(jbytes2, 0, len2, reinterpret_cast<const jbyte *>(pps));
+    (*jniEnv).CallVoidMethod(jobj, onAudio, jbytes1, jbytes2);
+    (*jniEnv).DeleteLocalRef(jbytes1);
+    (*jniEnv).DeleteLocalRef(jbytes2);
 }
 
