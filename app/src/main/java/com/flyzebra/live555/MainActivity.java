@@ -37,7 +37,7 @@ public class MainActivity extends AppCompatActivity {
         new Thread(new Runnable() {
             @Override
             public void run() {
-                rtspClient.openUrl("rtsp://192.168.42.1/live");
+                rtspClient.openUrl("rtsp://192.168.1.88:8554/test.mkv");
             }
         }).start();
 

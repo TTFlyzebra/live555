@@ -14,9 +14,9 @@ jobject jobj;
 
 void javaOnResult(const char *result);
 
-void javaOnVideo(const char *videoBytes);
+void javaOnVideo(const char *videoBytes,int length);
 
-void javaOnAudio(const char *audioBytes);
+void javaOnAudio(const char *audioBytes, int length);
 
 void openURL(UsageEnvironment &env, char const *progName, char const *rtspURL);
 
@@ -173,8 +173,7 @@ static unsigned rtspClientCount = 0; // Counts how many streams (i.e., "RTSPClie
 void openURL(UsageEnvironment &env, char const *progName, char const *rtspURL) {
     // Begin by creating a "RTSPClient" object.  Note that there is a separate "RTSPClient" object for each stream that we wish
     // to receive (even if more than stream uses the same "rtsp://" URL).
-    RTSPClient *rtspClient = ourRTSPClient::createNew(env, rtspURL, RTSP_CLIENT_VERBOSITY_LEVEL,
-                                                      progName);
+    RTSPClient *rtspClient = ourRTSPClient::createNew(env, rtspURL, RTSP_CLIENT_VERBOSITY_LEVEL, progName);
     if (rtspClient == NULL) {
 //        javaOnResult(jniEnv, thiz, "Failed to create a RTSP client for URL \"%s\": %s\n", rtspURL,env.getResultMsg());
         LOGE("Failed to create a RTSP client for URL \"%s\": %s\n", rtspURL, env.getResultMsg());
@@ -517,36 +516,14 @@ void DummySink::afterGettingFrame(void *clientData, unsigned frameSize, unsigned
     sink->afterGettingFrame(frameSize, numTruncatedBytes, presentationTime, durationInMicroseconds);
 }
 
-// If you don't want to see debugging output for each received frame, then comment out the following line:
-#define DEBUG_PRINT_EACH_RECEIVED_FRAME 1
-
 void DummySink::afterGettingFrame(unsigned frameSize, unsigned numTruncatedBytes,
                                   struct timeval presentationTime,
                                   unsigned /*durationInMicroseconds*/) {
     // We've just received a frame of data.  (Optionally) print out information about it:
-    LOGI("Stream ID=%d,mediumName=%s,codecName=%s,size=%d,\n", fStreamId,
-         fSubsession.mediumName(), fSubsession.codecName(), frameSize);
-    javaOnVideo((const char *) fReceiveBuffer);
-#ifdef DEBUG_PRINT_EACH_RECEIVED_FRAME
-    if (fStreamId != NULL) envir() << "Stream \"" << fStreamId << "\"; ";
-    envir() << fSubsession.mediumName() << "/" << fSubsession.codecName() << ":\tReceived "
-            << frameSize << " bytes";
-    if (numTruncatedBytes > 0) envir() << " (with " << numTruncatedBytes << " bytes truncated)";
-    char uSecsStr[6 + 1]; // used to output the 'microseconds' part of the presentation time
-    sprintf(uSecsStr, "%06u", (unsigned) presentationTime.tv_usec);
-    envir() << ".\tPresentation time: " << (int) presentationTime.tv_sec << "." << uSecsStr;
-    if (fSubsession.rtpSource() != NULL &&
-        !fSubsession.rtpSource()->hasBeenSynchronizedUsingRTCP()) {
-        envir()
-                << "!"; // mark the debugging output to indicate that this presentation time is not RTCP-synchronized
-    }
-#ifdef DEBUG_PRINT_NPT
-    envir() << "\tNPT: " << fSubsession.getNormalPlayTime(presentationTime);
-#endif
-    envir() << "\n";
-#endif
-
-    // Then continue, to request the next frame of data:
+    LOGI("Stream ID=%d,mediumName=%s,codecName=%s,size=%d,\n", fStreamId, fSubsession.mediumName(), fSubsession.codecName(), frameSize);
+    char *buf = new char[frameSize];
+    memcpy(buf,fReceiveBuffer,frameSize);
+    javaOnVideo((const char *) buf,frameSize);
     continuePlaying();
 }
 
@@ -600,7 +577,7 @@ void javaOnResult(const char *result) {
     (*jniEnv).CallVoidMethod(jobj, onresult, jstr);
     (*jniEnv).DeleteLocalRef(jstr);
 }
-void javaOnVideo(const char *videoBytes) {
+void javaOnVideo(const char *videoBytes,int length) {
     static jmethodID onVideo = NULL;
     if (onVideo == NULL) {
         jclass cls = (*jniEnv).GetObjectClass(jobj);
@@ -610,14 +587,13 @@ void javaOnVideo(const char *videoBytes) {
             return; /* method not found */
         }
     }
-    jsize len = static_cast<jsize>(strlen(videoBytes));
-    jbyteArray jbytes = (*jniEnv).NewByteArray(static_cast<jsize>(len));
-    (*jniEnv).SetByteArrayRegion(jbytes, 0, len, reinterpret_cast<const jbyte *>(videoBytes));
+    jbyteArray jbytes = (*jniEnv).NewByteArray(static_cast<jsize>(length));
+    (*jniEnv).SetByteArrayRegion(jbytes, 0, length, reinterpret_cast<const jbyte *>(videoBytes));
     (*jniEnv).CallVoidMethod(jobj, onVideo, jbytes);
     (*jniEnv).DeleteLocalRef(jbytes);
 }
 
-void javaOnAudio(const char *audioBytes) {
+void javaOnAudio(const char *audioBytes,int length) {
     static jmethodID onAudio = NULL;
     if (onAudio == NULL) {
         jclass cls = (*jniEnv).GetObjectClass(jobj);
@@ -627,9 +603,8 @@ void javaOnAudio(const char *audioBytes) {
             return; /* method not found */
         }
     }
-    int len = static_cast<int>(strlen(audioBytes));
-    jbyteArray jbytes = (*jniEnv).NewByteArray(static_cast<jsize>(len));
-    (*jniEnv).SetByteArrayRegion(jbytes, 0, len, reinterpret_cast<const jbyte *>(audioBytes));
+    jbyteArray jbytes = (*jniEnv).NewByteArray(static_cast<jsize>(length));
+    (*jniEnv).SetByteArrayRegion(jbytes, 0, length, reinterpret_cast<const jbyte *>(audioBytes));
     (*jniEnv).CallVoidMethod(jobj, onAudio, jbytes);
 }
 
