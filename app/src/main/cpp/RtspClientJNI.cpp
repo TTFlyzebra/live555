@@ -449,27 +449,27 @@ unsigned char const istart[107] = {0x00, 0x00, 0x00, 0x01, 0x27, 0x4d, 0x40, 0x2
 void DummySink::afterGettingFrame(unsigned frameSize, unsigned numTruncatedBytes,
                                   struct timeval presentationTime,
                                   unsigned /*durationInMicroseconds*/) {
-//    int type = 0;
-//    if (firstFrame) {
-//        unsigned int num;
-//        SPropRecord *sps = parseSPropParameterSets(fSubsession.fmtp_spropparametersets(), num);
-//        javaOnSPS_PPS(reinterpret_cast<const char *>(sps[0].sPropBytes), sps[0].sPropLength,
-//                      reinterpret_cast<const char *>(sps[1].sPropBytes), sps[1].sPropLength);
-//        delete[] sps;
-//        firstFrame = False;
-//    }
-//    if ((0 == strcmp(fSubsession.codecName(), "H264"))) {
-//        type = (u_int8_t) (fReceiveBuffer[0] & 0x1f);
-//        if (5 == type) {
-//            memcpy(buf, istart, 107);
-//            memcpy(buf + 107, fReceiveBuffer, frameSize);
-//            javaOnVideo(buf, frameSize + 107);
-//        } else if (1 == type) {
-//            memcpy(buf, pstart, 22);
-//            memcpy(buf + 22, fReceiveBuffer, frameSize);
-//            javaOnVideo(buf, frameSize + 22);
-//        }
-//    }
+    int type = 0;
+    if (firstFrame) {
+        unsigned int num;
+        SPropRecord *sps = parseSPropParameterSets(fSubsession.fmtp_spropparametersets(), num);
+        javaOnSPS_PPS(reinterpret_cast<const char *>(sps[0].sPropBytes), sps[0].sPropLength,
+                      reinterpret_cast<const char *>(sps[1].sPropBytes), sps[1].sPropLength);
+        delete[] sps;
+        firstFrame = False;
+    }
+    if ((0 == strcmp(fSubsession.codecName(), "H264"))) {
+        type = (u_int8_t) (fReceiveBuffer[0] & 0x1f);
+        if (5 == type) {
+            memcpy(buf, istart, 107);
+            memcpy(buf + 107, fReceiveBuffer, frameSize);
+            javaOnVideo(buf, frameSize + 107);
+        } else if (1 == type) {
+            memcpy(buf, pstart, 22);
+            memcpy(buf + 22, fReceiveBuffer, frameSize);
+            javaOnVideo(buf, frameSize + 22);
+        }
+    }
 //    LOGI("stream ID=%d,mediumName=%s,codecName=%s,size=%d,\n", fStreamId,fSubsession.mediumName(), fSubsession.codecName(), frameSize);
 //    if ((0 == strcmp(fSubsession.codecName(),"H264"))) {
 //        buf[0] = 0x00;
@@ -484,76 +484,76 @@ void DummySink::afterGettingFrame(unsigned frameSize, unsigned numTruncatedBytes
 ////        javaOnAudio(buf,frameSize);
 ////        delete[] buf;
 //    }
-
-    int dateLen = 0;
-    u_int8_t nal_unit_type = 0;
-    nal_unit_type = (u_int8_t) (fReceiveBuffer[0] & 0x1f);
-    // 此时,fReceiveBuffer中保存着接收到的视频数据,对该帧数据进行保存
-//    LOGI("stream ID=%d,mediumName=%s,codecName=%s,size=%d,\n", fStreamId,fSubsession.mediumName(), fSubsession.codecName(), frameSize);
-    if ((0 == strcmp(fSubsession.codecName(), "H264"))) {
-        // 仅每次播放的第一次进入执行本段代码
-        if (!fHaveWrittenFirstFrame) {    // 对视频数据的SPS,PPS进行补偿
-            if (nal_unit_type != 5) {
-                continuePlaying();
-                return;
-            }
-            unsigned numSPropRecords;
-            SPropRecord *sPropRecords = parseSPropParameterSets(
-                    fSubsession.fmtp_spropparametersets(), numSPropRecords);
-            for (unsigned i = 0; i < numSPropRecords; ++i) {
-                memcpy(p_nalu_pos, start_code, 4);
-                p_nalu_pos += 4;
-                memcpy(p_nalu_pos, sPropRecords[i].sPropBytes, sPropRecords[i].sPropLength);
-                p_nalu_pos += sPropRecords[i].sPropLength;
-            }
-            memcpy(p_nalu_pos, start_code, 4);
-            p_nalu_pos += 4;
-            memcpy(p_nalu_pos, fReceiveBuffer, frameSize);
-            p_nalu_pos += frameSize;
-            dateLen = (int) (p_nalu_pos - nalu_buffer);
-            fHaveWrittenFirstFrame = true; // 标记SPS,PPS已经完成补偿
-            p_nalu_pos = nalu_buffer;
-            LOGI("1111dateLen=%d",dateLen);
-            javaOnVideo(nalu_buffer, dateLen);
-            pre_time_stamp = presentationTime;
-            continuePlaying();
-            return;
-        } else {
-            if (presentationTime.tv_sec == pre_time_stamp.tv_sec &&
-                presentationTime.tv_usec == pre_time_stamp.tv_usec) {
-                memcpy(p_nalu_pos, start_code, 4);
-                p_nalu_pos += 4;
-                memcpy(p_nalu_pos, fReceiveBuffer, frameSize);
-                p_nalu_pos += frameSize;
-                dateLen = p_nalu_pos - nalu_buffer;
-                if (5 == nal_unit_type) {
-                    p_nalu_pos = nalu_buffer;
-                    pre_time_stamp = presentationTime;
-                    LOGI("2222dateLen=%d",dateLen);
-                    javaOnVideo(nalu_buffer, dateLen);
-                    continuePlaying();
-                    return;
-                } else {
-                    pre_time_stamp = presentationTime;
-                    continuePlaying();
-                    return;
-                }
-            } else {
-                p_nalu_pos = nalu_buffer;
-                memcpy(p_nalu_pos, start_code, sizeof(start_code));
-                p_nalu_pos += sizeof(start_code);
-                memcpy(p_nalu_pos, fReceiveBuffer, frameSize);
-                p_nalu_pos += frameSize;
-                dateLen = p_nalu_pos - nalu_buffer;
-                if (p_nalu_pos != nalu_buffer && dateLen > 100) {
-                    LOGI("3333dateLen=%d",dateLen);
-                    javaOnVideo(nalu_buffer, dateLen);
-                    p_nalu_pos = nalu_buffer;
-                }
-            }
-        }
-        pre_time_stamp = presentationTime;
-    }
+//
+//    int dateLen = 0;
+//    u_int8_t nal_unit_type = 0;
+//    nal_unit_type = (u_int8_t) (fReceiveBuffer[0] & 0x1f);
+//    // 此时,fReceiveBuffer中保存着接收到的视频数据,对该帧数据进行保存
+////    LOGI("stream ID=%d,mediumName=%s,codecName=%s,size=%d,\n", fStreamId,fSubsession.mediumName(), fSubsession.codecName(), frameSize);
+//    if ((0 == strcmp(fSubsession.codecName(), "H264"))) {
+//        // 仅每次播放的第一次进入执行本段代码
+//        if (!fHaveWrittenFirstFrame) {    // 对视频数据的SPS,PPS进行补偿
+//            if (nal_unit_type != 5) {
+//                continuePlaying();
+//                return;
+//            }
+//            unsigned numSPropRecords;
+//            SPropRecord *sPropRecords = parseSPropParameterSets(
+//                    fSubsession.fmtp_spropparametersets(), numSPropRecords);
+//            for (unsigned i = 0; i < numSPropRecords; ++i) {
+//                memcpy(p_nalu_pos, start_code, 4);
+//                p_nalu_pos += 4;
+//                memcpy(p_nalu_pos, sPropRecords[i].sPropBytes, sPropRecords[i].sPropLength);
+//                p_nalu_pos += sPropRecords[i].sPropLength;
+//            }
+//            memcpy(p_nalu_pos, start_code, 4);
+//            p_nalu_pos += 4;
+//            memcpy(p_nalu_pos, fReceiveBuffer, frameSize);
+//            p_nalu_pos += frameSize;
+//            dateLen = (int) (p_nalu_pos - nalu_buffer);
+//            fHaveWrittenFirstFrame = true; // 标记SPS,PPS已经完成补偿
+//            p_nalu_pos = nalu_buffer;
+//            LOGI("1111dateLen=%d",dateLen);
+//            javaOnVideo(nalu_buffer, dateLen);
+//            pre_time_stamp = presentationTime;
+//            continuePlaying();
+//            return;
+//        } else {
+//            if (presentationTime.tv_sec == pre_time_stamp.tv_sec &&
+//                presentationTime.tv_usec == pre_time_stamp.tv_usec) {
+//                memcpy(p_nalu_pos, start_code, 4);
+//                p_nalu_pos += 4;
+//                memcpy(p_nalu_pos, fReceiveBuffer, frameSize);
+//                p_nalu_pos += frameSize;
+//                dateLen = p_nalu_pos - nalu_buffer;
+//                if (5 == nal_unit_type) {
+//                    p_nalu_pos = nalu_buffer;
+//                    pre_time_stamp = presentationTime;
+//                    LOGI("2222dateLen=%d",dateLen);
+//                    javaOnVideo(nalu_buffer, dateLen);
+//                    continuePlaying();
+//                    return;
+//                } else {
+//                    pre_time_stamp = presentationTime;
+//                    continuePlaying();
+//                    return;
+//                }
+//            } else {
+//                p_nalu_pos = nalu_buffer;
+//                memcpy(p_nalu_pos, start_code, sizeof(start_code));
+//                p_nalu_pos += sizeof(start_code);
+//                memcpy(p_nalu_pos, fReceiveBuffer, frameSize);
+//                p_nalu_pos += frameSize;
+//                dateLen = p_nalu_pos - nalu_buffer;
+//                if (p_nalu_pos != nalu_buffer && dateLen > 100) {
+//                    LOGI("3333dateLen=%d",dateLen);
+//                    javaOnVideo(nalu_buffer, dateLen);
+//                    p_nalu_pos = nalu_buffer;
+//                }
+//            }
+//        }
+//        pre_time_stamp = presentationTime;
+//    }
     continuePlaying();
 }
 
