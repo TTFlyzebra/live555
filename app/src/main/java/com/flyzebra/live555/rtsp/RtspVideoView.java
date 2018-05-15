@@ -1,7 +1,6 @@
 package com.flyzebra.live555.rtsp;
 
 import android.content.Context;
-import android.media.MediaCodec;
 import android.util.AttributeSet;
 import android.util.Base64;
 import android.view.SurfaceHolder;
@@ -44,7 +43,7 @@ public class RtspVideoView extends SurfaceView implements SurfaceHolder.Callback
 
             @Override
             public void onVideo(byte[] videoBytes) {
-                FlyLog.i(bytes2HexString(videoBytes));
+                FlyLog.i("size=%d:%s",videoBytes.length,bytes2HexString(videoBytes));
                 mediaDecoder.input(videoBytes,videoBytes.length);
             }
 
@@ -64,7 +63,7 @@ public class RtspVideoView extends SurfaceView implements SurfaceHolder.Callback
         new Thread(new Runnable() {
             @Override
             public void run() {
-                rtspClient.openUrl("rtsp://192.168.1.88/live");
+                rtspClient.openUrl("rtsp://192.168.42.1/live");
             }
         }).start();
     }
