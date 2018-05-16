@@ -12,11 +12,12 @@ import com.flyzebra.live555.decoder.MediaDecoder;
  * Time: 18-5-14 下午9:00.
  * Discription: This is RtspVideoView
  */
-public class RtspVideoView extends SurfaceView implements SurfaceHolder.Callback{
+public class RtspVideoView extends SurfaceView implements SurfaceHolder.Callback {
     private RtspClient rtspClient;
     private MediaDecoder mediaDecoder;
+
     public RtspVideoView(Context context) {
-        this(context,null);
+        this(context, null);
     }
 
     public RtspVideoView(Context context, AttributeSet attrs) {
@@ -34,16 +35,16 @@ public class RtspVideoView extends SurfaceView implements SurfaceHolder.Callback
 
     @Override
     public void surfaceCreated(SurfaceHolder surfaceHolder) {
-        mediaDecoder = new MediaDecoder(getHolder().getSurface());
         rtspClient = new RtspClient(new IRtspCallBack() {
             @Override
             public void onResult(String resultCode) {
+                FlyLog.d("rtspclient message:%s", resultCode);
             }
 
             @Override
             public void onVideo(byte[] videoBytes) {
-                FlyLog.i("size=%d:%s",videoBytes.length,bytes2HexString(videoBytes));
-                mediaDecoder.input(videoBytes,videoBytes.length);
+//                FlyLog.i("size=%d:%s",videoBytes.length,bytes2HexString(videoBytes));
+                mediaDecoder.input(videoBytes);
             }
 
             @Override
@@ -53,18 +54,15 @@ public class RtspVideoView extends SurfaceView implements SurfaceHolder.Callback
 
             @Override
             public void onSPS_PPS(byte[] sps, byte[] pps) {
-                mediaDecoder.initMediaCodec(sps,pps);
-                mediaDecoder.start();
-                FlyLog.i("sps=%s,pps=%s", bytes2HexString(sps),bytes2HexString(pps));
+                mediaDecoder = new MediaDecoder(getHolder().getSurface(),sps,pps);
+            }
+
+            @Override
+            public void onStop() {
+                mediaDecoder.stop();
             }
         });
-
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                rtspClient.openUrl("rtsp://192.168.42.1/live");
-            }
-        }).start();
+        rtspClient.connect("rtsp://192.168.42.1/live");
     }
 
     @Override
@@ -78,8 +76,8 @@ public class RtspVideoView extends SurfaceView implements SurfaceHolder.Callback
         mediaDecoder.stop();
     }
 
-    public static String bytes2HexString(byte[] bytes){
-        if(bytes==null||bytes.length==1){
+    public static String bytes2HexString(byte[] bytes) {
+        if (bytes == null || bytes.length == 1) {
             return null;
         }
 

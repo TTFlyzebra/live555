@@ -2,7 +2,6 @@ package com.flyzebra.live555.decoder;
 
 import android.media.MediaCodec;
 import android.media.MediaFormat;
-import android.util.Base64;
 import android.view.Surface;
 
 import com.flyzebra.live555.rtsp.FlyLog;
@@ -24,17 +23,18 @@ public class MediaDecoder {
     private MediaFormat mediaFormat;
     private long BUFFER_TIMEOUT = -1;
 
-    public MediaDecoder(Surface surface) {
+    public MediaDecoder(Surface surface, byte[] sps, byte[] pps) {
         this.surface = surface;
+        initMediaCodec(sps, pps);
+        start();
     }
 
-    public void initMediaCodec(byte[] sps,byte[]pps) {
+    private void initMediaCodec(byte[] sps, byte[] pps) {
         try {
             info = new MediaCodec.BufferInfo();
-            mediaFormat = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, 1024, 552);
+            mediaFormat = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, 1280, 720);
             mediaFormat.setByteBuffer("csd-0", ByteBuffer.wrap(sps));
             mediaFormat.setByteBuffer("csd-1", ByteBuffer.wrap(pps));
-//            mediaFormat.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 864 * 480);
             mediaCodec = MediaCodec.createDecoderByType("video/avc");
             mediaCodec.configure(mediaFormat, surface, null, 0);
         } catch (IOException e) {
@@ -49,12 +49,13 @@ public class MediaDecoder {
         outputBuffers = mediaCodec.getOutputBuffers();
     }
 
-    public void input(byte[] data, int len) {
+    public void input(byte[] data) {
         int inIndex = mediaCodec.dequeueInputBuffer(BUFFER_TIMEOUT);
         if (inIndex >= 0) {
             ByteBuffer buffer = inputBuffers[inIndex];
             buffer.clear();
-            mediaCodec.queueInputBuffer(inIndex, 0, len, 40, 0);
+            buffer.put(data);
+            mediaCodec.queueInputBuffer(inIndex, 0, data.length, 33, 0);
         }
         int outIndex = mediaCodec.dequeueOutputBuffer(info, 0);
         switch (outIndex) {
@@ -67,7 +68,6 @@ public class MediaDecoder {
             case MediaCodec.INFO_TRY_AGAIN_LATER:
                 break;
             default:
-                FlyLog.d("releaseOutputBuffer true");
                 mediaCodec.releaseOutputBuffer(outIndex, true);
                 break;
         }

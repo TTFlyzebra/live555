@@ -6,11 +6,16 @@
 #include "BasicUsageEnvironment.hh"
 
 #define LOG_TAG "live555Lib"
+#define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG,LOG_TAG,__VA_ARGS__)
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,LOG_TAG,__VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR,LOG_TAG,__VA_ARGS__)
 
 JNIEnv *jniEnv;
 jobject jobj;
+
+static bool firstFrame = true;
+unsigned char const start_code[4] = {0x00, 0x00, 0x00, 0x01};
+static char *buf = new char[1024 * 1024];
 
 void javaOnResult(const char *result);
 
@@ -18,17 +23,9 @@ void javaOnVideo(const char *videoBytes, int length);
 
 void javaOnAudio(const char *audioBytes, int length);
 
-void javaOnSPS_PPS(const char *sps, int len1, const char *pps, int len2);
+void javaOnRecvRTP(const char *sps, int len1, const char *pps, int len2);
 
 void openURL(UsageEnvironment &env, char const *progName, char const *rtspURL);
-
-static bool firstFrame = true;
-static bool fHaveWrittenFirstFrame = false;
-static char nalu_buffer[1024 * 1024] = {0};    // 用于保存添加起始码等信息的视频数据
-static char *p_nalu_pos = nalu_buffer;            // nalu_buffer数组的游标
-unsigned char const start_code[4] = {0x00, 0x00, 0x00, 0x01};    // 起始码
-unsigned char const connect_0601[4] = {0x03, 0x00, 0x01, 0x80};    // 起始码
-static struct timeval pre_time_stamp = {0, 0};
 
 void continueAfterDESCRIBE(RTSPClient *rtspClient, int resultCode, char *resultString);
 
@@ -154,29 +151,23 @@ void continueAfterDESCRIBE(RTSPClient *rtspClient, int resultCode, char *resultS
     do {
         UsageEnvironment &env = rtspClient->envir(); // alias
         StreamClientState &scs = ((ourRTSPClient *) rtspClient)->scs; // alias
-
         if (resultCode != 0) {
-            env << *rtspClient << "Failed to get a SDP description: " << resultString << "\n";
+            LOGD("Failed to get a SDP description:\n %s", resultString);
             delete[] resultString;
             break;
         }
-
         char *const sdpDescription = resultString;
-        env << *rtspClient << "Got a SDP description:\n" << sdpDescription << "\n";
-
-        // Create a media session object from this SDP description:
+        LOGD("Got a SDP description:\n %s", sdpDescription);
         scs.session = MediaSession::createNew(env, sdpDescription);
         delete[] sdpDescription; // because we don't need it anymore
         if (scs.session == NULL) {
-            env << *rtspClient
-                << "Failed to create a MediaSession object from the SDP description: "
-                << env.getResultMsg() << "\n";
+            LOGD("Failed to create a MediaSession object from the SDP description:  %s",
+                 env.getResultMsg());
             break;
         } else if (!scs.session->hasSubsessions()) {
-            env << *rtspClient << "This session has no media subsessions (i.e., no \"m=\" lines)\n";
+            LOGD("This session has no media subsessions (i.e., no \"m=\" lines)");
             break;
         }
-
         scs.iter = new MediaSubsessionIterator(*scs.session);
         setupNextSubsession(rtspClient);
         return;
@@ -432,128 +423,25 @@ void DummySink::afterGettingFrame(void *clientData, unsigned frameSize, unsigned
     sink->afterGettingFrame(frameSize, numTruncatedBytes, presentationTime, durationInMicroseconds);
 }
 
-
-static char *buf = new char[1024 * 1024];
-unsigned char const pstart[22] = {0x00, 0x00, 0x00, 0x01, 0x06, 0x01, 0x09, 0x00, 0x0c, 0x08, 0x24,
-                                  0x68, 0x00, 0x00, 0x03, 0x00, 0x01, 0x80, 0x00, 0x00, 0x00, 0x01};
-unsigned char const istart[107] = {0x00, 0x00, 0x00, 0x01, 0x27, 0x4d, 0x40, 0x2a, 0x9a, 0x64, 0x06,
-                                   0xc1, 0xed, 0x35, 0x01, 0x01, 0x01, 0x40, 0x00, 0x00, 0xfa, 0x40,
-                                   0x00, 0x3a, 0x98, 0x3a, 0x10, 0x00, 0x80, 0x00, 0x00, 0x3f, 0xff,
-                                   0x2e, 0xf2, 0xe3, 0x42, 0x00, 0x10, 0x00, 0x00, 0x07, 0xff, 0xe5,
-                                   0xde, 0x5c, 0x28, 0x00, 0x00, 0x00, 0x01, 0x28, 0xee, 0x3c, 0x80,
-                                   0x00, 0x00, 0x00, 0x01, 0x06, 0x00, 0x0d, 0x80, 0xa9, 0xb0, 0x00,
-                                   0x06, 0x18, 0x00, 0xa9, 0xb0, 0x00, 0x06, 0x18, 0x40, 0x80, 0x00,
-                                   0x00, 0x00, 0x01, 0x06, 0x01, 0x09, 0x00, 0x10, 0x08, 0x24, 0x68,
-                                   0x00, 0x00, 0x03, 0x00, 0x01, 0x80, 0x00, 0x00, 0x00, 0x01, 0x06,
-                                   0x06, 0x01, 0xc4, 0x80, 0x00, 0x00, 0x00, 0x01};    // 起始码
 void DummySink::afterGettingFrame(unsigned frameSize, unsigned numTruncatedBytes,
                                   struct timeval presentationTime,
                                   unsigned /*durationInMicroseconds*/) {
-    int type = 0;
     if (firstFrame) {
-        unsigned int num;
-        SPropRecord *sps = parseSPropParameterSets(fSubsession.fmtp_spropparametersets(), num);
-        javaOnSPS_PPS(reinterpret_cast<const char *>(sps[0].sPropBytes), sps[0].sPropLength,
-                      reinterpret_cast<const char *>(sps[1].sPropBytes), sps[1].sPropLength);
-        delete[] sps;
+        SPropRecord *sPropRecord;
+        unsigned int num = 0;
+        sPropRecord = parseSPropParameterSets(fSubsession.fmtp_spropparametersets(), num);
+        if (num > 1) {
+            javaOnRecvRTP((char *) (sPropRecord[0].sPropBytes), sPropRecord[0].sPropLength,
+                          (char *) (sPropRecord[1].sPropBytes), sPropRecord[1].sPropLength);
+        }
+        delete[] sPropRecord;
         firstFrame = False;
     }
     if ((0 == strcmp(fSubsession.codecName(), "H264"))) {
-        type = (u_int8_t) (fReceiveBuffer[0] & 0x1f);
-        if (5 == type) {
-            memcpy(buf, istart, 107);
-            memcpy(buf + 107, fReceiveBuffer, frameSize);
-            javaOnVideo(buf, frameSize + 107);
-        } else if (1 == type) {
-            memcpy(buf, pstart, 22);
-            memcpy(buf + 22, fReceiveBuffer, frameSize);
-            javaOnVideo(buf, frameSize + 22);
-        }
+        memcpy(buf, start_code, 4);
+        memcpy(buf + 4, fReceiveBuffer, frameSize);
+        javaOnVideo(buf, (4 + frameSize));
     }
-//    LOGI("stream ID=%d,mediumName=%s,codecName=%s,size=%d,\n", fStreamId,fSubsession.mediumName(), fSubsession.codecName(), frameSize);
-//    if ((0 == strcmp(fSubsession.codecName(),"H264"))) {
-//        buf[0] = 0x00;
-//        buf[1] = 0x00;
-//        buf[2] = 0x00;
-//        buf[3] = 0x01;
-//        memcpy(buf + 4, fReceiveBuffer, frameSize);
-//        javaOnVideo(buf, frameSize);
-//    } else {
-////        char *buf = new char[frameSize];
-////        memcpy(buf, fReceiveBuffer, frameSize);
-////        javaOnAudio(buf,frameSize);
-////        delete[] buf;
-//    }
-//
-//    int dateLen = 0;
-//    u_int8_t nal_unit_type = 0;
-//    nal_unit_type = (u_int8_t) (fReceiveBuffer[0] & 0x1f);
-//    // 此时,fReceiveBuffer中保存着接收到的视频数据,对该帧数据进行保存
-////    LOGI("stream ID=%d,mediumName=%s,codecName=%s,size=%d,\n", fStreamId,fSubsession.mediumName(), fSubsession.codecName(), frameSize);
-//    if ((0 == strcmp(fSubsession.codecName(), "H264"))) {
-//        // 仅每次播放的第一次进入执行本段代码
-//        if (!fHaveWrittenFirstFrame) {    // 对视频数据的SPS,PPS进行补偿
-//            if (nal_unit_type != 5) {
-//                continuePlaying();
-//                return;
-//            }
-//            unsigned numSPropRecords;
-//            SPropRecord *sPropRecords = parseSPropParameterSets(
-//                    fSubsession.fmtp_spropparametersets(), numSPropRecords);
-//            for (unsigned i = 0; i < numSPropRecords; ++i) {
-//                memcpy(p_nalu_pos, start_code, 4);
-//                p_nalu_pos += 4;
-//                memcpy(p_nalu_pos, sPropRecords[i].sPropBytes, sPropRecords[i].sPropLength);
-//                p_nalu_pos += sPropRecords[i].sPropLength;
-//            }
-//            memcpy(p_nalu_pos, start_code, 4);
-//            p_nalu_pos += 4;
-//            memcpy(p_nalu_pos, fReceiveBuffer, frameSize);
-//            p_nalu_pos += frameSize;
-//            dateLen = (int) (p_nalu_pos - nalu_buffer);
-//            fHaveWrittenFirstFrame = true; // 标记SPS,PPS已经完成补偿
-//            p_nalu_pos = nalu_buffer;
-//            LOGI("1111dateLen=%d",dateLen);
-//            javaOnVideo(nalu_buffer, dateLen);
-//            pre_time_stamp = presentationTime;
-//            continuePlaying();
-//            return;
-//        } else {
-//            if (presentationTime.tv_sec == pre_time_stamp.tv_sec &&
-//                presentationTime.tv_usec == pre_time_stamp.tv_usec) {
-//                memcpy(p_nalu_pos, start_code, 4);
-//                p_nalu_pos += 4;
-//                memcpy(p_nalu_pos, fReceiveBuffer, frameSize);
-//                p_nalu_pos += frameSize;
-//                dateLen = p_nalu_pos - nalu_buffer;
-//                if (5 == nal_unit_type) {
-//                    p_nalu_pos = nalu_buffer;
-//                    pre_time_stamp = presentationTime;
-//                    LOGI("2222dateLen=%d",dateLen);
-//                    javaOnVideo(nalu_buffer, dateLen);
-//                    continuePlaying();
-//                    return;
-//                } else {
-//                    pre_time_stamp = presentationTime;
-//                    continuePlaying();
-//                    return;
-//                }
-//            } else {
-//                p_nalu_pos = nalu_buffer;
-//                memcpy(p_nalu_pos, start_code, sizeof(start_code));
-//                p_nalu_pos += sizeof(start_code);
-//                memcpy(p_nalu_pos, fReceiveBuffer, frameSize);
-//                p_nalu_pos += frameSize;
-//                dateLen = p_nalu_pos - nalu_buffer;
-//                if (p_nalu_pos != nalu_buffer && dateLen > 100) {
-//                    LOGI("3333dateLen=%d",dateLen);
-//                    javaOnVideo(nalu_buffer, dateLen);
-//                    p_nalu_pos = nalu_buffer;
-//                }
-//            }
-//        }
-//        pre_time_stamp = presentationTime;
-//    }
     continuePlaying();
 }
 
@@ -577,8 +465,9 @@ Java_com_flyzebra_live555_rtsp_RtspClient_openUrl(JNIEnv *e, jobject t, jstring 
         javaOnResult("OutOfMemoryError already thrown");
     }
     LOGI("start open %s", surl);
+    firstFrame = true;
     openRtspURL(surl);
-//    env->ReleaseStringUTFChars(url, str);
+//    e->ReleaseStringUTFChars(jurl, surl);
 }
 
 
@@ -640,11 +529,11 @@ void javaOnAudio(const char *audioBytes, int length) {
     (*jniEnv).DeleteLocalRef(jbytes);
 }
 
-void javaOnSPS_PPS(const char *sps, int len1, const char *pps, int len2) {
+void javaOnRecvRTP(const char *sps, int len1, const char *pps, int len2) {
     static jmethodID onAudio = NULL;
     if (onAudio == NULL) {
         jclass cls = (*jniEnv).GetObjectClass(jobj);
-        onAudio = (*jniEnv).GetMethodID(cls, "onSPS_PPS", "([B[B)V");
+        onAudio = (*jniEnv).GetMethodID(cls, "onRecvRTP", "([B[B)V");
         if (onAudio == NULL) {
             LOGI("onAudio--method not found");
             return; /* method not found */

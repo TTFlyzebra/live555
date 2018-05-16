@@ -1,6 +1,7 @@
 package com.flyzebra.live555.rtsp;
 
-import android.net.Uri;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 
 /**
  * Author: FlyZebra
@@ -9,6 +10,7 @@ import android.net.Uri;
  */
 public class RtspClient {
     private IRtspCallBack iRtspCallBack;
+    private static final Executor executor = Executors.newFixedThreadPool(1);
     static {
         System.loadLibrary("rtspclient");
     }
@@ -17,8 +19,13 @@ public class RtspClient {
         this.iRtspCallBack = iRtspCallBack;
     }
 
-    public void connect(String url){
-        openUrl(url);
+    public void connect(final String url){
+        executor.execute(new Runnable() {
+            @Override
+            public void run() {
+                openUrl(url);
+            }
+        });
     }
 
     public void close(){
@@ -37,7 +44,7 @@ public class RtspClient {
         if(iRtspCallBack!=null) iRtspCallBack.onAudio(audioBytes);
     }
 
-    private void onSPS_PPS(byte[] sps,byte[] pps){
+    private void onRecvRTP(byte[] sps,byte[] pps){
         if(iRtspCallBack!=null) iRtspCallBack.onSPS_PPS(sps,pps);
     }
 
