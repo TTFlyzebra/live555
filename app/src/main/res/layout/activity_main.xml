@@ -6,7 +6,7 @@
     tools:context=".MainActivity">
 
     <com.flyzebra.live555.rtsp.RtspVideoView
-        android:id="@+id/ac_main_sv"
+        android:id="@+id/ac_main_rtspsv"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
