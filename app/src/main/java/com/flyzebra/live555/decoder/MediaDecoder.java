@@ -49,13 +49,13 @@ public class MediaDecoder {
         outputBuffers = mediaCodec.getOutputBuffers();
     }
 
-    public void input(byte[] data) {
+    public void input(byte[] bytes) {
         int inIndex = mediaCodec.dequeueInputBuffer(BUFFER_TIMEOUT);
         if (inIndex >= 0) {
             ByteBuffer buffer = inputBuffers[inIndex];
             buffer.clear();
-            buffer.put(data);
-            mediaCodec.queueInputBuffer(inIndex, 0, data.length, 33, 0);
+            buffer.put(bytes);
+            mediaCodec.queueInputBuffer(inIndex, 0, bytes.length, 33, 0);
         }
         int outIndex = mediaCodec.dequeueOutputBuffer(info, 0);
         switch (outIndex) {

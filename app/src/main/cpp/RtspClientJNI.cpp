@@ -15,9 +15,10 @@ JNIEnv *jniEnv;
 jobject jobj;
 
 static bool firstFrame = true;
-unsigned char const start_code[4] = {0x00, 0x00, 0x00, 0x01};
-char *buf = new char[1024 * 1024];
-char *resultMsg = new char[1024];
+static char const start_code[4] = {0x00, 0x00, 0x00, 0x01};
+static char *buf = new char[1024 * 1024];
+static char *resultMsg = new char[1024];
+static RTSPClient *myRtspClient;
 
 void javaOnResult(const char *result);
 
@@ -133,8 +134,6 @@ private:
 #define RTSP_CLIENT_VERBOSITY_LEVEL 1 // by default, print verbose output from each "RTSPClient"
 
 //static unsigned rtspClientCount = 0; // Counts how many streams (i.e., "RTSPClient"s) are currently in use.
-RTSPClient *myRtspClient;
-
 void openURL(UsageEnvironment &env, char const *progName, char const *rtspURL) {
     RTSPClient *rtspClient = ourRTSPClient::createNew(env, rtspURL, RTSP_CLIENT_VERBOSITY_LEVEL,
                                                       progName);
@@ -428,33 +427,33 @@ void DummySink::afterGettingFrame(void *clientData, unsigned frameSize, unsigned
 void DummySink::afterGettingFrame(unsigned frameSize, unsigned numTruncatedBytes,
                                   struct timeval presentationTime,
                                   unsigned /*durationInMicroseconds*/) {
+    sprintf(resultMsg, "%10s %10d (bytes)%10ld s%10ld us", fSubsession.codecName(), frameSize,
+            presentationTime.tv_sec, presentationTime.tv_usec);
+    LOGD("recv %s", resultMsg);
     if (firstFrame) {
-        SPropRecord *sPropRecord;
         unsigned int num = 0;
-        sPropRecord = parseSPropParameterSets(fSubsession.fmtp_spropparametersets(), num);
+        SPropRecord *sPropRecord = parseSPropParameterSets(fSubsession.fmtp_spropparametersets(), num);
         if (num > 1) {
+            LOGD("GET SPS-PPS Sucesse!", sPropRecord[0].sPropBytes, sPropRecord[1].sPropBytes);
             javaOnRecvRTP((char *) (sPropRecord[0].sPropBytes), sPropRecord[0].sPropLength,
                           (char *) (sPropRecord[1].sPropBytes), sPropRecord[1].sPropLength);
+        } else {
+            LOGD("GET SPS-PPS Failed!");
+            continuePlaying();
+            return;
         }
-        delete[] sPropRecord;
         firstFrame = False;
     }
-    if ((0 == strcmp(fSubsession.codecName(), "H264"))&&frameSize>0) {
-        sprintf(resultMsg,"%10d (bytes)%10ld s%10ld us",frameSize,presentationTime.tv_sec,presentationTime.tv_usec);
-        LOGD("recv %s",resultMsg);
+    if ((0 == strcmp(fSubsession.codecName(), "H264")) && frameSize > 0) {
         memcpy(buf, start_code, 4);
         memcpy(buf + 4, fReceiveBuffer, frameSize);
         javaOnVideo(buf, (4 + frameSize));
-    }else{
-        sprintf(resultMsg,"%10d (bytes)%10ld s%10ld us",frameSize,presentationTime.tv_sec,presentationTime.tv_usec);
-        LOGD("lost %s",resultMsg);
     }
     continuePlaying();
 }
 
 Boolean DummySink::continuePlaying() {
     if (fSource == NULL) return False; // sanity check (should not happen)
-
     // Request the next frame of data from our input source.  "afterGettingFrame()" will get called later, when it arrives:
     fSource->getNextFrame(fReceiveBuffer, DUMMY_SINK_RECEIVE_BUFFER_SIZE, afterGettingFrame, this,
                           onSourceClosure, this);
@@ -463,17 +462,18 @@ Boolean DummySink::continuePlaying() {
 
 extern "C" JNIEXPORT void
 JNICALL
-Java_com_flyzebra_live555_rtsp_RtspClient_openUrl(JNIEnv *e, jobject t, jstring jurl) {
-    jniEnv = e;
+Java_com_flyzebra_live555_rtsp_RtspClient_openUrl(JNIEnv *env, jobject t, jstring jurl) {
+    jniEnv = env;
     jobj = t;
     const char *surl;
-    surl = jniEnv->GetStringUTFChars(jurl, 0);
+    surl = env->GetStringUTFChars(jurl, 0);
     if (surl == NULL) {
         javaOnResult("OutOfMemoryError already thrown");
     }
     LOGI("start open %s", surl);
     firstFrame = true;
     openRtspURL(surl);
+    (*env).DeleteLocalRef((jobject) surl);
 //    e->ReleaseStringUTFChars(jurl, surl);
 }
 
@@ -497,6 +497,7 @@ void javaOnResult(const char *result) {
         jclass cls = (*jniEnv).GetObjectClass(jobj);
         onresult = (*jniEnv).GetMethodID(cls, "onResult", "(Ljava/lang/String;)V");
         if (onresult == NULL) {
+            LOGI("onResult--method not found");
             return; /* method not found */
         }
     }

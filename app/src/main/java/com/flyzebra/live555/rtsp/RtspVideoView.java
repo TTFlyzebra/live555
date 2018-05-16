@@ -57,10 +57,14 @@ public class RtspVideoView extends SurfaceView implements SurfaceHolder.Callback
     @Override
     public void surfaceDestroyed(SurfaceHolder surfaceHolder) {
         isPlaying = false;
-        mediaDecoder.stop();
-        rtspClient.close();
-        mediaDecoder = null;
-        rtspClient = null;
+        if (rtspClient != null) {
+            rtspClient.close();
+            rtspClient = null;
+        }
+        if (mediaDecoder != null) {
+            mediaDecoder.stop();
+            mediaDecoder = null;
+        }
     }
 
     @Override
@@ -80,6 +84,7 @@ public class RtspVideoView extends SurfaceView implements SurfaceHolder.Callback
 
     @Override
     public void onRecvRTP(byte[] sps, byte[] pps) {
+        FlyLog.i("onRecvRTP PPS=");
         if (isPlaying) mediaDecoder = new MediaDecoder(getHolder().getSurface(), sps, pps);
     }
 
