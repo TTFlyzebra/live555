@@ -2,6 +2,7 @@
 #include <string.h>
 #include <android/log.h>
 #include <sys/socket.h>
+#include <ctime>
 #include "liveMedia.hh"
 #include "BasicUsageEnvironment.hh"
 
@@ -148,6 +149,7 @@ void openURL(UsageEnvironment &env, char const *progName, char const *rtspURL) {
     rtspClient->sendDescribeCommand(continueAfterDESCRIBE);
     sprintf(resultMsg, "openURL OK! url=%s", rtspURL);
     LOGD("%s", resultMsg);
+    return;
 }
 
 void continueAfterDESCRIBE(RTSPClient *rtspClient, int resultCode, char *resultString) {
@@ -437,10 +439,15 @@ void DummySink::afterGettingFrame(unsigned frameSize, unsigned numTruncatedBytes
         delete[] sPropRecord;
         firstFrame = False;
     }
-    if ((0 == strcmp(fSubsession.codecName(), "H264"))) {
+    if ((0 == strcmp(fSubsession.codecName(), "H264"))&&frameSize>0) {
+        sprintf(resultMsg,"%10d (bytes)%10ld s%10ld us",frameSize,presentationTime.tv_sec,presentationTime.tv_usec);
+        LOGD("recv %s",resultMsg);
         memcpy(buf, start_code, 4);
         memcpy(buf + 4, fReceiveBuffer, frameSize);
         javaOnVideo(buf, (4 + frameSize));
+    }else{
+        sprintf(resultMsg,"%10d (bytes)%10ld s%10ld us",frameSize,presentationTime.tv_sec,presentationTime.tv_usec);
+        LOGD("lost %s",resultMsg);
     }
     continuePlaying();
 }
