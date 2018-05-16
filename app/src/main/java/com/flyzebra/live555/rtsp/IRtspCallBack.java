@@ -12,7 +12,7 @@ public interface IRtspCallBack {
 
     void onAudio(byte[] audioBytes);
 
-    void onSPS_PPS(byte[] sps,byte[] pps);
+    void onRecvRTP(byte[] sps,byte[] pps);
 
     void onStop();
 }

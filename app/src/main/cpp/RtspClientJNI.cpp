@@ -5,7 +5,7 @@
 #include "liveMedia.hh"
 #include "BasicUsageEnvironment.hh"
 
-#define LOG_TAG "live555Lib"
+#define LOG_TAG "c++live555>>>>"
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG,LOG_TAG,__VA_ARGS__)
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,LOG_TAG,__VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR,LOG_TAG,__VA_ARGS__)
@@ -15,7 +15,8 @@ jobject jobj;
 
 static bool firstFrame = true;
 unsigned char const start_code[4] = {0x00, 0x00, 0x00, 0x01};
-static char *buf = new char[1024 * 1024];
+char *buf = new char[1024 * 1024];
+char *resultMsg = new char[1024];
 
 void javaOnResult(const char *result);
 
@@ -130,21 +131,23 @@ private:
 
 #define RTSP_CLIENT_VERBOSITY_LEVEL 1 // by default, print verbose output from each "RTSPClient"
 
-static unsigned rtspClientCount = 0; // Counts how many streams (i.e., "RTSPClient"s) are currently in use.
+//static unsigned rtspClientCount = 0; // Counts how many streams (i.e., "RTSPClient"s) are currently in use.
+RTSPClient *myRtspClient;
 
 void openURL(UsageEnvironment &env, char const *progName, char const *rtspURL) {
     RTSPClient *rtspClient = ourRTSPClient::createNew(env, rtspURL, RTSP_CLIENT_VERBOSITY_LEVEL,
                                                       progName);
     if (rtspClient == NULL) {
-//        javaOnResult(jniEnv, thiz, "Failed to create a RTSP client for URL \"%s\": %s\n", rtspURL,env.getResultMsg());
-        LOGE("Failed to create a RTSP client for URL \"%s\": %s\n", rtspURL, env.getResultMsg());
-        javaOnResult("Failed to create a RTSP client for URL");
+        sprintf(resultMsg, "Failed to create a RTSP client for URL \"%s\": %s\n", rtspURL,
+                env.getResultMsg());
+        LOGE("%s", resultMsg);
+        javaOnResult(resultMsg);
         return;
     }
-
-    ++rtspClientCount;
+    myRtspClient = rtspClient;
     rtspClient->sendDescribeCommand(continueAfterDESCRIBE);
-    LOGI("openURL OK! url=%s", rtspURL);
+    sprintf(resultMsg, "openURL OK! url=%s", rtspURL);
+    LOGD("%s", resultMsg);
 }
 
 void continueAfterDESCRIBE(RTSPClient *rtspClient, int resultCode, char *resultString) {
@@ -152,12 +155,13 @@ void continueAfterDESCRIBE(RTSPClient *rtspClient, int resultCode, char *resultS
         UsageEnvironment &env = rtspClient->envir(); // alias
         StreamClientState &scs = ((ourRTSPClient *) rtspClient)->scs; // alias
         if (resultCode != 0) {
-            LOGD("Failed to get a SDP description:\n %s", resultString);
+            sprintf(resultMsg, "Failed to get a SDP description:\n %s", resultString);
+            LOGE("%s", resultMsg);
             delete[] resultString;
             break;
         }
         char *const sdpDescription = resultString;
-        LOGD("Got a SDP description:\n %s", sdpDescription);
+//        LOGD("Got a SDP description:\n %s", sdpDescription);
         scs.session = MediaSession::createNew(env, sdpDescription);
         delete[] sdpDescription; // because we don't need it anymore
         if (scs.session == NULL) {
@@ -362,10 +366,6 @@ void shutdownStream(RTSPClient *rtspClient, int exitCode) {
 
     env << *rtspClient << "Closing the stream.\n";
     Medium::close(rtspClient);
-
-    if (--rtspClientCount == 0) {
-        exit(exitCode);
-    }
 }
 
 ourRTSPClient *ourRTSPClient::createNew(UsageEnvironment &env, char const *rtspURL,
@@ -475,6 +475,7 @@ Java_com_flyzebra_live555_rtsp_RtspClient_openUrl(JNIEnv *e, jobject t, jstring 
 extern "C" JNIEXPORT void
 JNICALL
 Java_com_flyzebra_live555_rtsp_RtspClient_stop(JNIEnv *env, jobject thiz) {
+    shutdownStream(myRtspClient, 0);
 }
 
 /**

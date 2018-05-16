@@ -20,12 +20,12 @@ public class RtspClient {
     }
 
     public void connect(final String url){
-        executor.execute(new Runnable() {
+        new Thread(new Runnable() {
             @Override
             public void run() {
                 openUrl(url);
             }
-        });
+        }).start();
     }
 
     public void close(){
@@ -45,11 +45,11 @@ public class RtspClient {
     }
 
     private void onRecvRTP(byte[] sps,byte[] pps){
-        if(iRtspCallBack!=null) iRtspCallBack.onSPS_PPS(sps,pps);
+        if(iRtspCallBack!=null) iRtspCallBack.onRecvRTP(sps,pps);
     }
 
-    public native void openUrl(String url);
+    private native void openUrl(String url);
 
-    public native void stop();
+    private native void stop();
 
 }

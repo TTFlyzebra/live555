@@ -7,7 +7,7 @@ import android.util.Log;
  * Created by FlyZebra on 2018/3/29-下午1:24.
  */
 public class FlyLog {
-    public static final String TAG = "com.longhorn.viewdvr";
+    public static final String TAG = "javalive555>>>>";
     public static String[] filter = {
     };
 

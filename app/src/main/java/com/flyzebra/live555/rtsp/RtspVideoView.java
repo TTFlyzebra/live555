@@ -15,6 +15,7 @@ import com.flyzebra.live555.decoder.MediaDecoder;
 public class RtspVideoView extends SurfaceView implements SurfaceHolder.Callback {
     private RtspClient rtspClient;
     private MediaDecoder mediaDecoder;
+    private boolean isHasSurface = false;
 
     public RtspVideoView(Context context) {
         this(context, null);
@@ -35,6 +36,7 @@ public class RtspVideoView extends SurfaceView implements SurfaceHolder.Callback
 
     @Override
     public void surfaceCreated(SurfaceHolder surfaceHolder) {
+        isHasSurface = true;
         rtspClient = new RtspClient(new IRtspCallBack() {
             @Override
             public void onResult(String resultCode) {
@@ -43,8 +45,7 @@ public class RtspVideoView extends SurfaceView implements SurfaceHolder.Callback
 
             @Override
             public void onVideo(byte[] videoBytes) {
-//                FlyLog.i("size=%d:%s",videoBytes.length,bytes2HexString(videoBytes));
-                mediaDecoder.input(videoBytes);
+                if(isHasSurface) mediaDecoder.input(videoBytes);
             }
 
             @Override
@@ -53,7 +54,7 @@ public class RtspVideoView extends SurfaceView implements SurfaceHolder.Callback
             }
 
             @Override
-            public void onSPS_PPS(byte[] sps, byte[] pps) {
+            public void onRecvRTP(byte[] sps, byte[] pps) {
                 mediaDecoder = new MediaDecoder(getHolder().getSurface(),sps,pps);
             }
 
@@ -67,28 +68,14 @@ public class RtspVideoView extends SurfaceView implements SurfaceHolder.Callback
 
     @Override
     public void surfaceChanged(SurfaceHolder surfaceHolder, int i, int i1, int i2) {
-
     }
 
     @Override
     public void surfaceDestroyed(SurfaceHolder surfaceHolder) {
-        rtspClient.stop();
+        isHasSurface = false;
         mediaDecoder.stop();
-    }
-
-    public static String bytes2HexString(byte[] bytes) {
-        if (bytes == null || bytes.length == 1) {
-            return null;
-        }
-
-        StringBuilder stringBuffer = new StringBuilder("");
-        for (byte aByte : bytes) {
-            String hv = Integer.toHexString(aByte & 0xFF);
-            if (hv.length() < 2) {
-                stringBuffer.append(0);
-            }
-            stringBuffer.append(hv).append("-");
-        }
-        return stringBuffer.toString();
+        rtspClient.close();
+        mediaDecoder = null;
+        rtspClient = null;
     }
 }
