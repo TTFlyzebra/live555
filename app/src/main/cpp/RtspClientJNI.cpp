@@ -11,14 +11,22 @@
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,LOG_TAG,__VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR,LOG_TAG,__VA_ARGS__)
 
+// by default, print verbose output from each "RTSPClient"
+#define RTSP_CLIENT_VERBOSITY_LEVEL 0
+// Even though we're not going to be doing anything with the incoming data, we still need to receive it.
+// Define the size of the buffer that we'll use:
+#define DUMMY_SINK_RECEIVE_BUFFER_SIZE 1024*1024
 JNIEnv *jniEnv;
 jobject jobj;
 
 static bool firstFrame = true;
-static char const start_code[4] = {0x00, 0x00, 0x00, 0x01};
-static char *buf = new char[1024 * 1024];
+static char const H264Header[4] = {0x00, 0x00, 0x00, 0x01};
+static char *H264Buf = new char[DUMMY_SINK_RECEIVE_BUFFER_SIZE];
 static char *resultMsg = new char[1024];
 static RTSPClient *myRtspClient;
+// By default, we request that the server stream its data using RTP/UDP.
+// If, instead, you want to request that the server stream via RTP-over-TCP, change the following to True:
+static bool USE_TCP = false;
 
 void javaOnResult(const char *result);
 
@@ -131,12 +139,9 @@ private:
     char *fStreamId;
 };
 
-#define RTSP_CLIENT_VERBOSITY_LEVEL 1 // by default, print verbose output from each "RTSPClient"
-
 //static unsigned rtspClientCount = 0; // Counts how many streams (i.e., "RTSPClient"s) are currently in use.
 void openURL(UsageEnvironment &env, char const *progName, char const *rtspURL) {
-    RTSPClient *rtspClient = ourRTSPClient::createNew(env, rtspURL, RTSP_CLIENT_VERBOSITY_LEVEL,
-                                                      progName);
+    RTSPClient *rtspClient = ourRTSPClient::createNew(env, rtspURL, RTSP_CLIENT_VERBOSITY_LEVEL, progName);
     if (rtspClient == NULL) {
         sprintf(resultMsg, "Failed to create a RTSP client for URL \"%s\": %s\n", rtspURL,
                 env.getResultMsg());
@@ -162,7 +167,7 @@ void continueAfterDESCRIBE(RTSPClient *rtspClient, int resultCode, char *resultS
             break;
         }
         char *const sdpDescription = resultString;
-//        LOGD("Got a SDP description:\n %s", sdpDescription);
+        LOGD("Got a SDP description:\n %s", sdpDescription);
         scs.session = MediaSession::createNew(env, sdpDescription);
         delete[] sdpDescription; // because we don't need it anymore
         if (scs.session == NULL) {
@@ -180,9 +185,6 @@ void continueAfterDESCRIBE(RTSPClient *rtspClient, int resultCode, char *resultS
 
     shutdownStream(rtspClient);
 }
-
-#define REQUEST_STREAMING_OVER_TCP False
-
 void setupNextSubsession(RTSPClient *rtspClient) {
     UsageEnvironment &env = rtspClient->envir(); // alias
     StreamClientState &scs = ((ourRTSPClient *) rtspClient)->scs; // alias
@@ -190,22 +192,10 @@ void setupNextSubsession(RTSPClient *rtspClient) {
     scs.subsession = scs.iter->next();
     if (scs.subsession != NULL) {
         if (!scs.subsession->initiate()) {
-            env << *rtspClient << "Failed to initiate the \"" << *scs.subsession
-                << "\" subsession: " << env.getResultMsg() << "\n";
+            LOGD("Failed to initiate the subsession: %s",env.getResultMsg());
             setupNextSubsession(rtspClient); // give up on this subsession; go to the next one
         } else {
-            env << *rtspClient << "Initiated the \"" << *scs.subsession << "\" subsession (";
-            if (scs.subsession->rtcpIsMuxed()) {
-                env << "client port " << scs.subsession->clientPortNum();
-            } else {
-                env << "client ports " << scs.subsession->clientPortNum() << "-"
-                    << scs.subsession->clientPortNum() + 1;
-            }
-            env << ")\n";
-
-            // Continue setting up this subsession, by sending a RTSP "SETUP" command:
-            rtspClient->sendSetupCommand(*scs.subsession, continueAfterSETUP, False,
-                                         REQUEST_STREAMING_OVER_TCP);
+            rtspClient->sendSetupCommand(*scs.subsession, continueAfterSETUP, False, USE_TCP);
         }
         return;
     }
@@ -226,30 +216,25 @@ void continueAfterSETUP(RTSPClient *rtspClient, int resultCode, char *resultStri
         StreamClientState &scs = ((ourRTSPClient *) rtspClient)->scs; // alias
 
         if (resultCode != 0) {
-            env << *rtspClient << "Failed to set up the \"" << *scs.subsession << "\" subsession: "
-                << resultString << "\n";
+            LOGD("Failed to set up the subsession: %s",resultString);
             break;
         }
 
         env << *rtspClient << "Set up the \"" << *scs.subsession << "\" subsession (";
         if (scs.subsession->rtcpIsMuxed()) {
-            env << "client port " << scs.subsession->clientPortNum();
+            LOGD("client port=%d",scs.subsession->clientPortNum());
         } else {
-            env << "client ports " << scs.subsession->clientPortNum() << "-"
-                << scs.subsession->clientPortNum() + 1;
+            LOGD("client port1=%d,port2=%d",scs.subsession->clientPortNum(),scs.subsession->clientPortNum() + 1);
         }
-        env << ")\n";
-
         scs.subsession->sink = DummySink::createNew(env, *scs.subsession, rtspClient->url());
         // perhaps use your own custom "MediaSink" subclass instead
         if (scs.subsession->sink == NULL) {
-            env << *rtspClient << "Failed to create a data sink for the \"" << *scs.subsession
-                << "\" subsession: " << env.getResultMsg() << "\n";
+            LOGD("Failed to create a data sink for the subsession: %s" ,env.getResultMsg());
             break;
         }
 
-        env << *rtspClient << "Created a data sink for the \"" << *scs.subsession
-            << "\" subsession\n";
+//        env << *rtspClient << "Created a data sink for the \"" << *scs.subsession
+//            << "\" subsession\n";
         scs.subsession->miscPtr = rtspClient; // a hack to let subsession handler functions get the "RTSPClient" from the subsession
         scs.subsession->sink->startPlaying(*(scs.subsession->readSource()),
                                            subsessionAfterPlaying, scs.subsession);
@@ -398,8 +383,6 @@ StreamClientState::~StreamClientState() {
     }
 }
 
-#define DUMMY_SINK_RECEIVE_BUFFER_SIZE 100000
-
 DummySink *
 DummySink::createNew(UsageEnvironment &env, MediaSubsession &subsession, char const *streamId) {
     return new DummySink(env, subsession, streamId);
@@ -445,9 +428,9 @@ void DummySink::afterGettingFrame(unsigned frameSize, unsigned numTruncatedBytes
         firstFrame = False;
     }
     if ((0 == strcmp(fSubsession.codecName(), "H264")) && frameSize > 0) {
-        memcpy(buf, start_code, 4);
-        memcpy(buf + 4, fReceiveBuffer, frameSize);
-        javaOnVideo(buf, (4 + frameSize));
+        memcpy(H264Buf, H264Header, 4);
+        memcpy(H264Buf + 4, fReceiveBuffer, frameSize);
+        javaOnVideo(H264Buf, (4 + frameSize));
     }
     continuePlaying();
 }
@@ -483,6 +466,12 @@ extern "C" JNIEXPORT void
 JNICALL
 Java_com_flyzebra_live555_rtsp_RtspClient_stop(JNIEnv *env, jobject thiz) {
     shutdownStream(myRtspClient, 0);
+}
+
+extern "C" JNIEXPORT void
+JNICALL
+Java_com_flyzebra_live555_rtsp_RtspClient_useTCP(JNIEnv *env, jobject thiz) {
+    USE_TCP = true;
 }
 
 /**

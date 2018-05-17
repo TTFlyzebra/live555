@@ -47,7 +47,6 @@ public class RtspVideoView extends SurfaceView implements SurfaceHolder.Callback
             rtspClient.connect(rtspUrl);
             isPlaying = true;
         }
-
     }
 
     @Override
