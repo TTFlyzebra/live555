@@ -12,7 +12,7 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         rtspVideoView = findViewById(R.id.ac_main_rtspsv);
-        rtspVideoView.setRtspUrl("rtsp://192.168.42.1/live");
+        rtspVideoView.setRtspUrl("rtsp://192.168.1.88/live");
 
     }
 }
